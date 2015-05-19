@@ -1,62 +1,102 @@
 extern crate rand;
-use rand::*;
 
+use rand::*;
 use std::thread;
 
+const WIDTH: usize = 50;
+const HEIGHT: usize = 50;
+
 struct Universe {
-    matrix: [[bool;100];100]
+    matrix: [[bool; WIDTH]; HEIGHT],
+    epoch: u32
 }
 
-fn seed(universe: &mut Universe) {
-    for i in 0..100 {
-        for j in 0..100 {
-            universe.matrix[i][j] = random::<bool>();
-        }
+#[inline]
+fn empty_matrix() -> [[bool; WIDTH]; HEIGHT] {
+    [[false; WIDTH]; HEIGHT]
+}
+
+impl Universe {
+    fn new_empty() -> Universe {
+        Universe { matrix: empty_matrix(), epoch: 0 }
     }
-}
 
-fn maybe_get(matrix: &[[bool;100];100], i: i32, j: i32) -> u8 {
-    if i < 0 || i > 99 || j < 0 || j > 99 {0}
-    else { if matrix[i as usize][j as usize] {1} else {0} }
-}
+    fn new_random() -> Universe {
+        let mut result = Self::new_empty();
 
-fn step(universe: Universe) -> Universe {
-    let mut next = Universe{matrix: [[false;100];100]};
-
-    for i in 0..100 {
-        for j in 0..100 {
-            let mut count = 0;
-            count += maybe_get(&universe.matrix, i-1, j-1);
-            count += maybe_get(&universe.matrix, i-1, j);
-            count += maybe_get(&universe.matrix, i-1, j+1);
-            count += maybe_get(&universe.matrix, i, j-1);
-            count += maybe_get(&universe.matrix, i, j+1);
-            count += maybe_get(&universe.matrix, i+1, j-1);
-            count += maybe_get(&universe.matrix, i+1, j);
-            count += maybe_get(&universe.matrix, i+1, j+1);
-
-            next.matrix[i as usize][j as usize] = if universe.matrix[i as usize][j as usize] {
-                match count {
-                    0 | 1 => false,
-                    2 | 3 => true,
-                    _ => false
-                }
-            } else {
-                count == 3
+        for i in 0..WIDTH {
+            for j in 0..WIDTH {
+                result.matrix[i][j] = random::<bool>();
             }
         }
+
+        result
     }
 
-    next
+    fn maybe_get(&self, i: isize, j: isize) -> u8 {
+        if i < 0 || i >= WIDTH as isize || j < 0 || j >= WIDTH as isize {
+            0
+        } else if self.matrix[i as usize][j as usize] {
+            1
+        } else {
+            0
+        }
+    }
+
+    fn is_alive(&self, i: isize, j: isize) -> bool {
+        self.maybe_get(i, j) > 0
+    }
+
+    fn living_cells(&self) -> usize {
+        let mut count = 0;
+
+        for i in 0..WIDTH {
+            for j in 0..HEIGHT {
+                if self.matrix[i][j] {
+                    count += 1;
+                }
+            }
+        }
+
+        count
+    }
+
+    fn step(&mut self) {
+        let mut next = empty_matrix();
+
+        for i in 0..(WIDTH as isize) {
+            for j in 0..(HEIGHT as isize) {
+                let neighbourhood = [
+                    (i - 1, j - 1), (i - 1, j), (i - 1, j + 1),
+                    (i, j - 1), (i, j + 1),
+                    (i + 1, j - 1), (i + 1, j), (i + 1, j + 1),
+                ];
+
+                let mut count = 0;
+                for &(x, y) in neighbourhood.iter() {
+                    count += self.maybe_get(x, y);
+                }
+
+                next[i as usize][j as usize] = if self.is_alive(i, j) {
+                    count == 2 || count == 3
+                } else {
+                    count == 3
+                }
+            }
+        }
+
+        self.epoch += 1;
+
+        self.matrix = next;
+    }
 }
 
 impl ToString for Universe {
     fn to_string(&self) -> String {
         let mut str_repr = String::new();
-        for i in 0..100 {
-            for j in 0..100 {
-                str_repr.push_str(if (self.matrix[i][j]) {"o"} else {"-"});
-                str_repr.push_str(" ");
+        for i in 0..WIDTH {
+            for j in 0..HEIGHT {
+                str_repr.push_str(if self.matrix[i][j] { "o" } else { "-" });
             }
             str_repr.push_str("\n");
         }
@@ -65,14 +105,24 @@ impl ToString for Universe {
     }
 }
 
-fn main() {
-    let mut universe = Universe{matrix: [[false;100];100]};
+fn clear_screen() {
+    print!("\x1B[2J");
+}
 
-    seed(&mut universe);
+fn main() {
+    let mut universe = Universe::new_random();
 
     loop {
+        clear_screen();
         println!("{}", universe.to_string());
-        universe = step(universe);
-        thread::sleep_ms(100)
+        println!("Epoch: {}", universe.epoch);
+        {
+            let living_cells = universe.living_cells();
+            let total_size = WIDTH * HEIGHT;
+            println!("Living cells: {} ({:.2} %)", living_cells,
+                (living_cells as f32 / total_size as f32) * 100.);
+        }
+        thread::sleep_ms(100);
+        universe.step();
     }
 }
